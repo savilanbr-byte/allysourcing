@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mapa de Origen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E110C; --surface:#171C14; --sunk:#20271B; --ink:#E6E9DD; --muted:#9AA391; --line:#2F3828;
+  --cherry:#E4675B; --cherry-soft:rgba(228,103,91,.16); --leaf:#7DB88A; --leaf-soft:rgba(125,184,138,.15);
+  --amber:#E2AA3C; --amber-soft:rgba(226,170,60,.15);
+  --panel-w:400px; --top:56px;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 "Instrument Sans",system-ui,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:700;margin:0;letter-spacing:-.01em}
+
+/* encabezado */
+header{position:fixed;inset:0 0 auto 0;height:calc(var(--top) + var(--safe-t));padding:var(--safe-t) 14px 0;display:flex;align-items:center;gap:12px;z-index:5;
+  background:linear-gradient(var(--bg) 40%,rgba(14,17,12,0));pointer-events:none}
+header>*{pointer-events:auto}
+.logo{display:flex;align-items:center;gap:8px;font-family:"Bricolage Grotesque";font-weight:700;font-size:17px;white-space:nowrap}
+.bean{width:12px;height:16px;border-radius:50%;background:var(--cherry);position:relative;transform:rotate(-20deg)}
+.bean:after{content:"";position:absolute;left:50%;top:2px;bottom:2px;width:2px;margin-left:-1px;border-radius:2px;background:var(--bg);transform:rotate(12deg)}
+.crumbs{display:flex;align-items:center;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none;font-size:13.5px}
+.crumbs::-webkit-scrollbar{display:none}
+.crumbs button{padding:6px 8px;border-radius:8px;color:var(--muted);white-space:nowrap}
+.crumbs button:hover{background:var(--sunk);color:var(--ink)}
+.crumbs button:last-child{color:var(--ink);font-weight:600}
+.crumbs .sep{color:var(--line)}
+.back{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;background:var(--surface);flex:none}
+.back[hidden]{display:none}
+
+/* globo */
+#stage{position:fixed;inset:0;touch-action:none}
+canvas{display:block;width:100%;height:100%;cursor:grab}
+canvas.drag{cursor:grabbing}
+canvas.hot{cursor:pointer}
+.tip{position:fixed;z-index:6;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:13px;white-space:nowrap;transform:translate(-50%,calc(-100% - 12px));opacity:0;transition:opacity .12s}
+.tip.on{opacity:1}
+.tip b{font-weight:600}
+.tip span{color:var(--muted)}
+.zoom{position:fixed;z-index:4;display:flex;flex-direction:column;gap:6px;left:14px;bottom:calc(18px + var(--safe-b))}
+.zoom button{width:38px;height:38px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:18px;display:grid;place-items:center}
+.zoom button:hover{border-color:var(--muted)}
+
+/* panel */
+#panel{position:fixed;z-index:5;background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;
+  right:14px;top:calc(var(--top) + var(--safe-t) + 4px);bottom:14px;width:var(--panel-w);border-radius:16px;overflow:hidden}
+.ph{padding:18px 18px 12px;border-bottom:1px solid var(--line)}
+.ph .kicker{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.ph h2{font-size:24px;line-height:1.15}
+.ph .sub{color:var(--muted);font-size:13.5px;margin-top:4px}
+.grab{display:none}
+.pb{overflow-y:auto;padding:12px 12px 18px;flex:1;overscroll-behavior:contain}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0 2px}
+.stat{background:var(--sunk);border-radius:10px;padding:8px 10px}
+.stat .v{font-family:"IBM Plex Mono";font-size:19px;font-weight:500}
+.stat .l{font-size:11.5px;color:var(--muted)}
+.search{position:relative;margin:2px 0 10px}
+.search input{width:100%;background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:10px 12px 10px 34px;color:var(--ink);font:inherit;font-size:14.5px;outline:none}
+.search input:focus{border-color:var(--muted)}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.sec{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 6px 6px}
+.row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px;border-radius:10px;border:1px solid transparent}
+.row:hover,.row.hl{background:var(--sunk);border-color:var(--line)}
+.row .dot{width:9px;height:9px;border-radius:50%;background:var(--cherry);flex:none}
+.row .dot.off{background:transparent;border:1.5px solid var(--muted)}
+.row .tx{flex:1;min-width:0}
+.row .t{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.row .s{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .n{font-family:"IBM Plex Mono";font-size:13px;color:var(--muted);flex:none}
+.row .chev{color:var(--muted);flex:none}
+.avatar{width:36px;height:36px;border-radius:10px;background:var(--cherry-soft);color:var(--cherry);display:grid;place-items:center;font-family:"Bricolage Grotesque";font-weight:700;font-size:14px;flex:none}
+.prod{padding:11px 10px;border-bottom:1px solid var(--line)}
+.prod:last-child{border-bottom:0}
+.prod .t{font-weight:600}
+.prod .full{font-size:12.5px;color:var(--muted);margin-top:1px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chip{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--leaf-soft);color:var(--leaf);white-space:nowrap}
+.chip.p{background:var(--amber-soft);color:var(--amber)}
+.chip.btn{cursor:pointer;background:var(--sunk);color:var(--muted);border:1px solid var(--line);padding:4px 10px;font-size:12.5px}
+.chip.btn.on{background:var(--cherry-soft);color:var(--cherry);border-color:transparent}
+.note{font-size:13px;color:var(--amber);background:var(--amber-soft);border-radius:10px;padding:8px 10px;margin:8px 0}
+.empty{color:var(--muted);font-size:14px;padding:10px}
+details.avisos{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+details.avisos summary{cursor:pointer;color:var(--amber);font-size:13.5px;padding:4px 6px;list-style:none}
+details.avisos summary::-webkit-details-marker{display:none}
+details.avisos li{font-size:13px;color:var(--muted);margin:4px 0}
+.legend{display:flex;gap:14px;font-size:12.5px;color:var(--muted);padding:6px 6px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.loading{position:fixed;inset:0;display:grid;place-items:center;color:var(--muted);z-index:9}
+
+@media (max-width:760px){
+  :root{--top:52px}
+  .logo span{display:none}
+  #panel{left:0;right:0;bottom:0;top:auto;width:auto;height:46vh;border-radius:18px 18px 0 0;border-bottom:0;padding-bottom:var(--safe-b);transition:height .25s ease}
+  #panel.min{height:132px}
+  #panel.max{height:calc(100vh - var(--top) - var(--safe-t) - 8px)}
+  .grab{display:block;width:40px;height:4px;border-radius:4px;background:var(--line);margin:8px auto 0}
+  .ph{padding:8px 16px 10px;cursor:pointer}
+  .ph h2{font-size:21px}
+  .zoom{display:none}
+}
+@media (prefers-reduced-motion:reduce){#panel{transition:none}}
+</style>
+</head>
+<body>
+<div class="loading" id="loading">Cargando el mapa…</div>
+<div id="stage"><canvas id="cv"></canvas></div>
+<header>
+  <button class="back" id="back" hidden aria-label="Volver"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3 5 8l5 5"/></svg></button>
+  <div class="logo"><div class="bean"></div><span>Mapa de Origen</span></div>
+  <nav class="crumbs" id="crumbs"></nav>
+</header>
+<div class="zoom"><button id="zin" aria-label="Acercar">+</button><button id="zout" aria-label="Alejar">−</button></div>
+<aside id="panel"><div class="grab"></div><div class="ph" id="ph"></div><div class="pb" id="pb"></div></aside>
+<div class="tip" id="tip"></div>
+
+<script src="lib/d3.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+const slug=s=>norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const fmt=n=>new Intl.NumberFormat("es-CO").format(n);
+const plural=(n,a,b)=>`${fmt(n)} ${n===1?a:b}`;
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const C={ocean0:"#1E3037",ocean1:"#0B1417",land:"#3C4734",landLine:"#56634A",landDim:"#2C3527",
+  cherry:"#E4675B",cherryHi:"#F28C80",amber:"#E2AA3C",ink:"#E6E9DD",muted:"#9AA391",grat:"rgba(230,233,221,.05)",
+  depFill:"#4C5941",depLine:"#6E7D60",munLine:"rgba(230,233,221,.16)"};
+
+/* ---------- productos: variedad y proceso ---------- */
+const VAR=[["Pink Bourbon"],["Red Bourbon"],["Yellow Bourbon"],["Bourbon Sidra","Sidra"],["Bourbon Aji"],["Pacamara","Yellow Pacamara"],
+  ["Geisha","Gesha"],["Maracaturra"],["Yellow Caturra"],["Red Caturra"],["Caturra"],["Castillo"],["Sudan Rume","Rume Sudan"],["SL 28","SL28"],
+  ["Laurina"],["Chiroso"],["Typica"],["Moka"],["Tabi"],["Papayo"],["Catiope"],["Yirgacheffe"],["Bourbon"],["Blend"]];
+const PROC=[[/carbonic maceration/,"Maceración carbónica"],[/anaerobic/,"Anaeróbico"],[/semi[\s-]?washed/,"Semilavado"],
+  [/hidro honey/,"Hidro honey"],[/\bhoney\b/,"Honey"],[/\bwashe?d?\b|\bwashe\b/,"Lavado"],[/\bnatural\b/,"Natural"],[/decaf/,"Descafeinado"]];
+function parseProduct(p,prov){
+  let low=" "+norm(p.nombre)+" ";
+  const vars=[];
+  for(const group of VAR){
+    for(const v of group){
+      const re=new RegExp("\\b"+norm(v).replace(/ /g,"\\s*")+"\\b");
+      if(re.test(low)){vars.push(group[0]);low=low.replace(re," ");break;}
+    }
+  }
+  const procs=[];let pl=" "+norm(p.nombre)+" ";
+  pl=pl.replace(/\bwh?ith?out decaf\b/g," ");
+  for(const [re,lab] of PROC){ if(re.test(pl)){ if(lab==="Lavado"&&procs.includes("Semilavado"))continue; if(lab==="Honey"&&procs.includes("Hidro honey"))continue; procs.push(lab);} }
+  let title=p.nombre;
+  for(const pre of [p.finca,prov.nombre,"Coffeelipe"]){
+    if(pre && norm(title).startsWith(norm(pre))){title=title.slice(pre.length).replace(/^[\s,\-–]+/,"");break;}
+  }
+  return {title:title||p.nombre,vars:vars.filter(v=>v!=="Blend"||vars.length===1),procs};
+}
+
+/* ---------- estado ---------- */
+let RED,WORLD,GEO={};               // datos
+const S={level:0,pais:null,dep:null,mun:null,prov:null}; // selección
+const IDX={paises:new Map(),proveedores:[]};
+let W=0,H=0,DPR=1,view={x:0,y:0,w:0,h:0};
+const proj=d3.geoOrthographic().clipAngle(90).precision(.4);
+const cv=$("#cv"),ctx=cv.getContext("2d");
+const path=d3.geoPath(proj,ctx);
+let rot=[73,-4,0],scale=300,anim=null,spin=!reduce,lastInteract=0,hover=null;
+const grat=d3.geoGraticule10();
+
+/* ---------- carga ---------- */
+Promise.all([d3.json("data/red.json"),d3.json("data/mundo.json")]).then(async([red,world])=>{
+  RED=red;WORLD=world;
+  for(const p of RED.paises){
+    p.slug=slug(p.nombre);IDX.paises.set(p.iso3,p);
+    GEO[p.iso3]=await d3.json(`data/${p.iso3}.json`);
+    const feats=GEO[p.iso3].features;
+    p.depFeat=new Map(feats.filter(f=>f.properties.t==="dep").map(f=>[f.properties.name,f]));
+    p.nProv=0;p.nProd=0;
+    for(const d of p.departamentos){
+      d.slug=slug(d.name);d.pais=p;d.feat=p.depFeat.get(d.name);
+      d.munFeat=new Map(feats.filter(f=>f.properties.t==="mun"&&f.properties.dep===d.name).map(f=>[f.properties.name,f]));
+      d.nProv=0;d.nProd=0;
+      for(const m of d.municipios){
+        m.slug=slug(m.name);m.dep=d;m.feat=d.munFeat.get(m.name)||null;
+        for(const v of m.proveedores){
+          v.slug=slug(v.id);v.mun=m;
+          v.items=v.productos.map(x=>parseProduct(x,v));
+          d.nProv++;d.nProd+=v.productos.length;
+          IDX.proveedores.push(v);
+        }
+      }
+      p.nProv+=d.nProv;p.nProd+=d.nProd;
+    }
+    p.departamentos.sort((a,b)=>b.nProv-a.nProv||a.name.localeCompare(b.name));
+    p.feat={type:"FeatureCollection",features:[...p.depFeat.values()]};
+  }
+  $("#loading").remove();
+  resize();
+  if(!fromHash(true)) go({level:0},true);
+  requestAnimationFrame(loop);
+}).catch(e=>{$("#loading").textContent="No se pudieron cargar los datos ("+e.message+").";console.error(e);});
+
+/* ---------- tamaño y vista ---------- */
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;
+  const mobile=W<=760,top=(mobile?52:56);
+  if(mobile){const ph=$("#panel").getBoundingClientRect().height||H*.46;view={x:0,y:top,w:W,h:Math.max(200,H-ph-top)};}
+  else{view={x:0,y:top,w:W-400-28,h:H-top-14};}
+  proj.translate([view.x+view.w/2,view.y+view.h/2]);
+  if(!anim) {const t=target(); if(t) scale=t.scale;}
+  draw();
+}
+addEventListener("resize",()=>{resize();});
+
+function worldScale(){return Math.min(view.w,view.h)/2*0.86;}
+function fitScale(feature,center,pad){
+  // escala para que el objeto quepa en la vista con la rotación centrada en él
+  const p=d3.geoOrthographic().clipAngle(90).rotate([-center[0],-center[1],0]).translate([0,0]).scale(1);
+  const b=d3.geoPath(p).bounds(feature);
+  const bw=Math.max(1e-4,b[1][0]-b[0][0]),bh=Math.max(1e-4,b[1][1]-b[0][1]);
+  return Math.min(view.w*pad/bw,view.h*pad/bh);
+}
+function target(){
+  const ws=worldScale();
+  if(S.level===0) return {rot:null,scale:ws};
+  const p=S.pais;
+  if(S.level===1){const c=d3.geoCentroid(p.feat);return {rot:[-c[0],-c[1],0],scale:fitScale(p.feat,c,.86)};}
+  const d=S.dep;
+  if(S.level===2||!S.mun.feat){const c=d3.geoCentroid(d.feat);return {rot:[-c[0],-c[1],0],scale:fitScale(d.feat,c,.84)};}
+  const m=S.mun,c=d3.geoCentroid(m.feat);
+  const ds=fitScale(d.feat,d3.geoCentroid(d.feat),.84);
+  return {rot:[-c[0],-c[1],0],scale:Math.min(fitScale(m.feat,c,.5),ds*3.2)};
+}
+
+/* ---------- animación ---------- */
+function flyTo(t,instant){
+  if(!t) return;
+  const r0=rot.slice(),s0=scale;
+  const r1=t.rot?t.rot:[r0[0],-8,0];
+  const s1=t.scale;
+  if(instant||reduce){rot=r1;scale=s1;anim=null;draw();return;}
+  const a=[-r0[0],-r0[1]],b=[-r1[0],-r1[1]];
+  const gi=d3.geoInterpolate(a,b),dist=d3.geoDistance(a,b);
+  const ls0=Math.log(s0),ls1=Math.log(s1);
+  const dip=Math.min(.75,dist*1.1)*(Math.max(s0,s1)>worldScale()*1.5?1:.35);
+  const dur=900+Math.min(900,dist*900+Math.abs(ls1-ls0)*180);
+  const t0=performance.now();
+  anim={step(now){
+    const k=Math.min(1,(now-t0)/dur),e=d3.easeCubicInOut(k);
+    const c=gi(e);rot=[-c[0],-c[1],0];
+    scale=Math.exp(ls0+(ls1-ls0)*e)*(1-dip*Math.sin(Math.PI*e));
+    scale=Math.max(scale,Math.min(s0,s1,worldScale())*.9);
+    if(k>=1){rot=r1;scale=s1;anim=null;}
+  }};
+}
+function loop(now){
+  if(anim){anim.step(now);draw();}
+  else if(spin&&S.level===0&&!drag&&now-lastInteract>2500){rot[0]+=0.06;draw();}
+  requestAnimationFrame(loop);
+}
+
+/* ---------- dibujo ---------- */
+function visible(lonlat){const c=proj.invert(proj.translate());return c&&d3.geoDistance(lonlat,c)<Math.PI/2-0.03;}
+function draw(){
+  if(!WORLD) return;
+  proj.rotate(rot).scale(scale);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  const [cx,cy]=proj.translate();
+  // halo
+  const halo=ctx.createRadialGradient(cx,cy,scale*.98,cx,cy,scale*1.18);
+  halo.addColorStop(0,"rgba(125,184,138,.16)");halo.addColorStop(1,"rgba(125,184,138,0)");
+  ctx.fillStyle=halo;ctx.beginPath();ctx.arc(cx,cy,scale*1.18,0,2*Math.PI);ctx.fill();
+  // océano con luz
+  const g=ctx.createRadialGradient(cx-scale*.35,cy-scale*.4,scale*.05,cx,cy,scale);
+  g.addColorStop(0,C.ocean0);g.addColorStop(1,C.ocean1);
+  ctx.fillStyle=g;ctx.beginPath();path({type:"Sphere"});ctx.fill();
+  ctx.beginPath();path(grat);ctx.strokeStyle=C.grat;ctx.lineWidth=1;ctx.stroke();
+
+  const deep=S.level>=1;
+  // países
+  for(const f of WORLD.features){
+    const has=IDX.paises.has(f.properties.iso3);
+    if(deep&&has&&S.pais&&S.pais.iso3===f.properties.iso3) continue;
+    ctx.beginPath();path(f);
+    ctx.fillStyle=has?(hover&&hover.kind==="pais"&&hover.obj.iso3===f.properties.iso3?C.cherryHi:C.cherry):(deep?C.landDim:C.land);
+    ctx.fill();
+    ctx.strokeStyle=deep?"rgba(86,99,74,.6)":C.landLine;ctx.lineWidth=.6;ctx.stroke();
+  }
+  if(deep) drawCountry(S.pais);
+  // sombreado de esfera (luz)
+  const sh=ctx.createRadialGradient(cx-scale*.4,cy-scale*.45,scale*.2,cx,cy,scale*1.02);
+  sh.addColorStop(0,"rgba(255,255,255,.05)");sh.addColorStop(.7,"rgba(0,0,0,0)");sh.addColorStop(1,"rgba(0,0,0,.35)");
+  ctx.fillStyle=sh;ctx.beginPath();path({type:"Sphere"});ctx.fill();
+  ctx.beginPath();path({type:"Sphere"});ctx.strokeStyle="rgba(125,184,138,.25)";ctx.lineWidth=1;ctx.stroke();
+  drawLabels();
+}
+function drawCountry(p){
+  const lvl=S.level;
+  for(const [name,f] of p.depFeat){
+    const d=p.departamentos.find(x=>x.name===name);
+    const active=!!d, sel=S.dep&&S.dep.name===name, hov=hover&&hover.kind==="dep"&&hover.obj.name===name;
+    ctx.beginPath();path(f);
+    if(lvl===1) ctx.fillStyle=active?(hov?C.cherryHi:C.cherry):C.depFill;
+    else ctx.fillStyle=sel?"#4F5C44":(hov?"#3A4433":C.landDim);
+    ctx.fill();
+    ctx.strokeStyle=lvl===1?C.depLine:(active&&!sel?"rgba(228,103,91,.55)":"rgba(110,125,96,.7)");ctx.lineWidth=lvl===1?.8:(active&&!sel?1.1:.7);ctx.stroke();
+  }
+  if(lvl>=2){
+    const d=S.dep;
+    for(const [name,f] of d.munFeat){
+      const m=d.municipios.find(x=>x.name===name);
+      const sel=S.mun&&S.mun.name===name, hov=hover&&hover.kind==="mun"&&hover.obj.name===name;
+      ctx.beginPath();path(f);
+      if(m){ctx.fillStyle=sel?C.cherryHi:(hov?C.cherryHi:C.cherry);ctx.globalAlpha=sel||lvl===2?1:.6;ctx.fill();ctx.globalAlpha=1;}
+      ctx.strokeStyle=m?"rgba(255,235,228,.55)":C.munLine;ctx.lineWidth=m?.9:.6;ctx.stroke();
+    }
+    ctx.beginPath();path(d.feat);ctx.strokeStyle="rgba(230,233,221,.75)";ctx.lineWidth=1.6;ctx.stroke();
+  }
+}
+function label(txt,x,y,o){
+  o=o||{};
+  ctx.font=`${o.weight||600} ${o.size||12.5}px "Instrument Sans",system-ui,sans-serif`;
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.lineWidth=3.5;ctx.strokeStyle="rgba(14,17,12,.85)";ctx.lineJoin="round";ctx.strokeText(txt,x,y);
+  ctx.fillStyle=o.color||C.ink;ctx.fillText(txt,x,y);
+}
+function badge(n,x,y,hot){
+  const r=n>9?12:10.5;
+  ctx.beginPath();ctx.arc(x,y,r+2.5,0,2*Math.PI);ctx.fillStyle="rgba(14,17,12,.65)";ctx.fill();
+  ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.fillStyle=hot?"#fff":C.ink;ctx.fill();
+  ctx.font=`500 12px "IBM Plex Mono",monospace`;ctx.fillStyle="#1A1F16";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(n,x,y+.5);
+}
+function drawLabels(){
+  if(anim&&!reduce) return;
+  const L=S.level;
+  if(L===0){
+    for(const p of RED.paises){
+      if(!visible(p.centro)) continue;
+      const [x,y]=proj(p.centro);
+      label(p.nombre,x,y-26,{size:14});
+      badge(p.nProv,x,y,hover&&hover.obj===p);
+    }
+  }else{
+    const boxes=[];
+    const list=L===1?S.pais.departamentos.map(d=>({o:d,c:d.c||(d.c=d3.geoCentroid(d.feat)),n:d.nProv}))
+                    :S.dep.municipios.map(m=>({o:m,c:m.c,n:m.proveedores.length}));
+    const ms=list.filter(it=>visible(it.c)).sort((a,b)=>(b.o===S.mun)-(a.o===S.mun)||b.n-a.n).map(it=>Object.assign(it.o,{_n:it.n,_c:it.c}));
+    const pos=ms.map(m=>proj(m._c));
+    // primero los números (círculos), luego los nombres que no choquen
+    ms.forEach((m,i)=>{const [x,y]=pos[i];boxes.push([x-13,y-13,x+13,y+13]);});
+    ms.forEach((m,i)=>{const [x,y]=pos[i];badge(m._n,x,y,S.mun===m||(hover&&hover.obj===m));});
+    ms.forEach((m,i)=>{
+      const [x,y]=pos[i],sel=S.mun===m,size=sel?14:12.5;
+      ctx.font=`600 ${size}px "Instrument Sans",system-ui,sans-serif`;
+      const w=ctx.measureText(m.name).width/2+3,h=size/2+3;
+      const cands=[[x,y+21],[x,y-22],[x+w+15,y],[x-w-15,y]];
+      const free=cands.find(([cx,cy])=>!boxes.some((b,j)=>j!==i&&cx-w<b[2]&&cx+w>b[0]&&cy-h<b[3]&&cy+h>b[1]));
+      if(!free&&!sel&&!(hover&&hover.obj===m))return;
+      const [lx,ly]=free||cands[0];
+      boxes.push([lx-w,ly-h,lx+w,ly+h]);
+      label(m.name,lx,ly,{size,color:sel?"#fff":C.ink});
+    });
+  }
+}
+
+/* ---------- interacción en el globo ---------- */
+const pts=new Map();let drag=null,pinch=null;
+cv.addEventListener("pointerdown",e=>{
+  cv.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);
+  lastInteract=performance.now();anim=null;
+  if(pts.size===1) drag={x:e.clientX,y:e.clientY,r:rot.slice(),moved:0};
+  if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),s:scale};drag=null;}
+});
+cv.addEventListener("pointermove",e=>{
+  if(pts.has(e.pointerId)) pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pinch&&pts.size===2){const [a,b]=[...pts.values()];setScale(pinch.s*Math.hypot(a[0]-b[0],a[1]-b[1])/pinch.d);return;}
+  if(drag){
+    const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));
+    if(drag.moved>4){cv.classList.add("drag");const k=180/Math.PI/scale;
+      rot=[drag.r[0]+dx*k,Math.max(-85,Math.min(85,drag.r[1]-dy*k)),0];draw();hideTip();}
+    return;
+  }
+  if(e.pointerType==="mouse") doHover(e.clientX,e.clientY);
+});
+function endPointer(e){
+  const wasClick=drag&&drag.moved<=4&&pts.size===1;
+  pts.delete(e.pointerId);if(pts.size<2)pinch=null;
+  cv.classList.remove("drag");
+  if(wasClick) pick(e.clientX,e.clientY,true);
+  drag=null;lastInteract=performance.now();
+}
+cv.addEventListener("pointerup",endPointer);
+cv.addEventListener("pointercancel",e=>{pts.delete(e.pointerId);drag=null;pinch=null;cv.classList.remove("drag");});
+cv.addEventListener("pointerleave",()=>{if(!drag){hover=null;hideTip();cv.classList.remove("hot");draw();}});
+cv.addEventListener("wheel",e=>{e.preventDefault();lastInteract=performance.now();anim=null;setScale(scale*Math.exp(-e.deltaY*.0015));},{passive:false});
+function setScale(s){scale=Math.max(worldScale()*.7,Math.min(worldScale()*400,s));draw();}
+$("#zin").onclick=()=>{anim=null;lastInteract=performance.now();setScale(scale*1.5);};
+$("#zout").onclick=()=>{anim=null;lastInteract=performance.now();setScale(scale/1.5);};
+
+function hit(x,y){
+  const ll=proj.invert([x,y]);
+  const cen=proj.invert(proj.translate());
+  const onGlobe=ll&&d3.geoDistance(ll,cen)<Math.PI/2;
+  // primero los marcadores (números)
+  const near=(c,r)=>{if(!visible(c))return false;const p=proj(c);return Math.hypot(p[0]-x,p[1]-y)<r;};
+  if(S.level===0){for(const p of RED.paises) if(near(p.centro,18)) return {kind:"pais",obj:p};}
+  else if(S.level===1){for(const d of S.pais.departamentos) if(near(d3.geoCentroid(d.feat),16)) return {kind:"dep",obj:d};}
+  else {for(const m of S.dep.municipios) if(near(m.c,16)) return {kind:"mun",obj:m};}
+  if(!onGlobe) return null;
+  if(S.level===0){
+    const f=WORLD.features.find(f=>d3.geoContains(f,ll));
+    if(!f) return null;
+    const p=IDX.paises.get(f.properties.iso3);
+    return p?{kind:"pais",obj:p}:{kind:"otro",obj:{name:f.properties.name}};
+  }
+  if(S.level===1){
+    for(const d of S.pais.departamentos) if(d.feat&&d3.geoContains(d.feat,ll)) return {kind:"dep",obj:d};
+    for(const [n,f] of S.pais.depFeat) if(d3.geoContains(f,ll)) return {kind:"depvacio",obj:{name:n}};
+    return null;
+  }
+  for(const m of S.dep.municipios) if(m.feat&&d3.geoContains(m.feat,ll)) return {kind:"mun",obj:m};
+  for(const d of S.pais.departamentos) if(d!==S.dep&&d.feat&&d3.geoContains(d.feat,ll)) return {kind:"dep",obj:d};
+  for(const [n,f] of S.dep.munFeat) if(d3.geoContains(f,ll)) return {kind:"munvacio",obj:{name:n}};
+  return null;
+}
+function doHover(x,y){
+  const h=hit(x,y);
+  const same=(h&&hover&&h.obj===hover.obj)||(!h&&!hover);
+  hover=h&&(h.kind==="pais"||h.kind==="dep"||h.kind==="mun")?h:null;
+  cv.classList.toggle("hot",!!hover);
+  if(h) showTip(h,x,y); else hideTip();
+  if(!same) draw();
+}
+function tipText(h){
+  const o=h.obj;
+  if(h.kind==="pais") return `<b>${esc(o.nombre)}</b> <span>· ${plural(o.nProv,"proveedor","proveedores")}</span>`;
+  if(h.kind==="dep") return `<b>${esc(o.name)}</b> <span>· ${plural(o.nProv,"proveedor","proveedores")}</span>`;
+  if(h.kind==="mun") return `<b>${esc(o.name)}</b> <span>· ${plural(o.proveedores.length,"proveedor","proveedores")}</span>`;
+  return `${esc(o.name)} <span>· sin proveedores</span>`;
+}
+function showTip(h,x,y){const t=$("#tip");t.innerHTML=tipText(h);t.style.left=x+"px";t.style.top=y+"px";t.classList.add("on");}
+function hideTip(){$("#tip").classList.remove("on");}
+let tipTimer;
+function pick(x,y){
+  const h=hit(x,y);
+  if(!h) return;
+  if(h.kind==="pais") go({level:1,pais:h.obj});
+  else if(h.kind==="dep") go({level:2,pais:S.pais,dep:h.obj});
+  else if(h.kind==="mun") go({level:3,pais:S.pais,dep:S.dep,mun:h.obj});
+  else{showTip(h,x,y);clearTimeout(tipTimer);tipTimer=setTimeout(hideTip,1600);}
+}
+
+/* ---------- navegación ---------- */
+function go(sel,instant){
+  Object.assign(S,{level:0,pais:null,dep:null,mun:null,prov:null},sel);
+  hover=null;hideTip();
+  const t=target();
+  // al pasar a la ficha del proveedor no se mueve el globo
+  if(!(sel.level===4&&!sel._move)) flyTo(t,instant);
+  render();
+  const h=hashOf();
+  if(location.hash.slice(1)!==h){try{history.replaceState(null,"",h?"#"+h:location.pathname+location.search);}catch(e){}}
+  lastInteract=performance.now();
+}
+function up(){
+  if(S.level===4) go({level:3,pais:S.pais,dep:S.dep,mun:S.mun});
+  else if(S.level===3) go({level:2,pais:S.pais,dep:S.dep});
+  else if(S.level===2) go({level:1,pais:S.pais});
+  else go({level:0});
+}
+$("#back").onclick=up;
+addEventListener("keydown",e=>{if(e.key==="Escape"&&document.activeElement.tagName!=="INPUT")up();});
+
+function hashOf(){
+  const parts=[];
+  if(S.pais)parts.push(S.pais.slug);
+  if(S.dep)parts.push(S.dep.slug);
+  if(S.mun)parts.push(S.mun.slug);
+  if(S.prov)parts.push(S.prov.slug);
+  return parts.join("--");
+}
+function fromHash(instant){
+  const h=location.hash.slice(1);if(!h)return false;
+  const [ps,ds,ms,vs]=h.split("--");
+  const p=RED.paises.find(x=>x.slug===ps);if(!p)return false;
+  const d=ds&&p.departamentos.find(x=>x.slug===ds);
+  const m=d&&ms&&d.municipios.find(x=>x.slug===ms);
+  const v=m&&vs&&m.proveedores.find(x=>x.slug===vs);
+  if(v) go({level:4,pais:p,dep:d,mun:m,prov:v,_move:true},instant);
+  else if(m) go({level:3,pais:p,dep:d,mun:m},instant);
+  else if(d) go({level:2,pais:p,dep:d},instant);
+  else go({level:1,pais:p},instant);
+  return true;
+}
+addEventListener("hashchange",()=>{if(location.hash.slice(1)!==hashOf())fromHash(false);});
+
+/* ---------- panel ---------- */
+function crumbs(){
+  const c=[["Mundo",()=>go({level:0})]];
+  if(S.pais)c.push([S.pais.nombre,()=>go({level:1,pais:S.pais})]);
+  if(S.dep)c.push([S.dep.name,()=>go({level:2,pais:S.pais,dep:S.dep})]);
+  if(S.mun)c.push([S.mun.name.replace(" (por confirmar)",""),()=>go({level:3,pais:S.pais,dep:S.dep,mun:S.mun})]);
+  if(S.prov)c.push([S.prov.nombre,()=>{}]);
+  const nav=$("#crumbs");nav.innerHTML="";
+  c.forEach(([t,f],i)=>{
+    if(i){const s=document.createElement("span");s.className="sep";s.textContent="›";nav.appendChild(s);}
+    const b=document.createElement("button");b.textContent=t;b.onclick=f;nav.appendChild(b);
+  });
+  nav.scrollLeft=nav.scrollWidth;
+  $("#back").hidden=S.level===0;
+}
+const chev='<svg class="chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 3 5 5-5 5"/></svg>';
+const initials=s=>s.replace(/^(el|la|los|las)\s+/i,"").split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+function rowHTML(o){
+  return `<button class="row" data-k="${o.k}" data-i="${o.i}">${o.lead||'<span class="dot"></span>'}<span class="tx"><div class="t">${esc(o.t)}</div>${o.s?`<div class="s">${esc(o.s)}</div>`:""}</span>${o.n!=null?`<span class="n">${o.n}</span>`:""}${chev}</button>`;
+}
+function render(){
+  crumbs();
+  const ph=$("#ph"),pb=$("#pb"),L=S.level;
+  let head="",body="";
+  if(L===0){
+    const nDep=RED.paises.reduce((a,p)=>a+p.departamentos.length,0),nMun=RED.paises.reduce((a,p)=>a+p.departamentos.reduce((b,d)=>b+d.municipios.length,0),0);
+    const nProv=IDX.proveedores.length,nProd=IDX.proveedores.reduce((a,v)=>a+v.productos.length,0);
+    head=`<div class="kicker">Red de proveedores</div><h2>¿De dónde viene el café?</h2><div class="sub">Toca un país en el globo o búscalo abajo.</div>`;
+    body=`<div class="stats">${[[RED.paises.length,"países"],[nDep,"departamentos"],[nMun,"municipios"],[nProv,"proveedores"],[nProd,"productos"],[new Set(IDX.proveedores.flatMap(v=>v.items.flatMap(i=>i.vars))).size,"variedades"]].map(([v,l])=>`<div class="stat"><div class="v">${fmt(v)}</div><div class="l">${l}</div></div>`).join("")}</div>
+      ${searchHTML()}<div id="results"></div>
+      <div id="base"><div class="sec">Países</div>${RED.paises.map((p,i)=>rowHTML({k:"pais",i,t:p.nombre,s:`${plural(p.departamentos.length,"departamento","departamentos")} · ${plural(p.nProd,"producto","productos")}`,n:p.nProv})).join("")}
+      ${avisosHTML()}</div>`;
+  }else if(L===1){
+    const p=S.pais;
+    head=`<div class="kicker">País</div><h2>${esc(p.nombre)}</h2><div class="sub">${plural(p.nProv,"proveedor","proveedores")} en ${plural(p.departamentos.length,"departamento","departamentos")}</div>`;
+    body=`${searchHTML()}<div id="results"></div><div id="base"><div class="legend"><span><i style="background:var(--cherry)"></i>Con proveedores</span><span><i style="background:${C.depFill}"></i>Sin proveedores</span></div>
+      <div class="sec">Departamentos</div>${p.departamentos.map((d,i)=>rowHTML({k:"dep",i,t:d.name,s:d.municipios.map(m=>m.name.replace(" (por confirmar)","")).join(", "),n:d.nProv})).join("")}</div>`;
+  }else if(L===2){
+    const d=S.dep;
+    head=`<div class="kicker">${esc(S.pais.nombre)} · Departamento</div><h2>${esc(d.name)}</h2><div class="sub">${plural(d.nProv,"proveedor","proveedores")} · ${plural(d.nProd,"producto","productos")}</div>`;
+    const ms=d.municipios.slice().sort((a,b)=>b.proveedores.length-a.proveedores.length||a.name.localeCompare(b.name));
+    d._ms=ms;
+    body=`<div class="sec">Municipios</div>${ms.map((m,i)=>rowHTML({k:"mun",i,t:m.name,s:m.proveedores.map(v=>v.nombre).join(", "),n:m.proveedores.length,lead:`<span class="dot${m.ok?"":" off"}"></span>`})).join("")}`;
+  }else if(L===3){
+    const m=S.mun;
+    head=`<div class="kicker">${esc(S.dep.name)} · Municipio</div><h2>${esc(m.name)}</h2><div class="sub">${plural(m.proveedores.length,"proveedor","proveedores")}</div>`;
+    body=(m.ok?"":`<div class="note">El Excel dice «${esc(m.name.replace(" (por confirmar)",""))}», que no es un municipio de ${esc(S.dep.name)}. Lo ubiqué en el centro del departamento hasta confirmarlo.</div>`)+
+      `<div class="sec">Proveedores</div>`+m.proveedores.map((v,i)=>rowHTML({k:"prov",i,t:v.nombre,s:[v.localidad?`Vereda/corregimiento: ${v.localidad}`:null,v.productos.length?plural(v.productos.length,"producto","productos"):"Sin productos registrados"].filter(Boolean).join(" · "),n:v.id,lead:`<span class="avatar">${esc(initials(v.nombre))}</span>`})).join("");
+  }else{
+    const v=S.prov;
+    const procs=[...new Set(v.items.flatMap(i=>i.procs))],vars=[...new Set(v.items.flatMap(i=>i.vars))];
+    head=`<div class="kicker">Proveedor · ${esc(v.id)}</div><h2>${esc(v.nombre)}</h2><div class="sub">${esc([v.localidad,v.mun.name.replace(" (por confirmar)",""),S.dep.name].filter(Boolean).join(", "))} · ${plural(v.productos.length,"producto","productos")}</div>`;
+    body=v.productos.length?`${vars.length>1||procs.length>1?`<div class="sec">Filtrar</div><div class="chips" id="filt" style="padding:0 6px">${[...vars.map(x=>["v",x]),...procs.map(x=>["p",x])].map(([t,x])=>`<button class="chip btn" data-t="${t}" data-x="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:""}
+      <div class="sec">Productos</div><div id="plist"></div>`:`<div class="empty">Este proveedor todavía no tiene productos en la hoja «Cropster Products».</div>`;
+  }
+  ph.innerHTML=head;pb.innerHTML=body;pb.scrollTop=0;
+  pb.querySelectorAll(".row").forEach(b=>b.addEventListener("click",()=>rowClick(b.dataset.k,+b.dataset.i)));
+  pb.querySelectorAll(".row").forEach(b=>{b.addEventListener("mouseenter",()=>rowHover(b.dataset.k,+b.dataset.i));b.addEventListener("mouseleave",()=>{hover=null;draw();});});
+  if(L===4) renderProducts();
+  const inp=$("#q");if(inp){inp.addEventListener("input",()=>search(inp.value));}
+  const pan=$("#panel");if(W<=760){pan.classList.remove("max","min");}
+  draw();
+}
+function rowClick(k,i){
+  if(k==="pais") go({level:1,pais:RED.paises[i]});
+  else if(k==="dep") go({level:2,pais:S.pais,dep:S.pais.departamentos[i]});
+  else if(k==="mun") go({level:3,pais:S.pais,dep:S.dep,mun:S.dep._ms[i]});
+  else if(k==="prov") go({level:4,pais:S.pais,dep:S.dep,mun:S.mun,prov:S.mun.proveedores[i]});
+  else if(k==="hit"){const v=IDX.proveedores[i];go({level:4,pais:v.mun.dep.pais,dep:v.mun.dep,mun:v.mun,prov:v,_move:true});}
+}
+function rowHover(k,i){
+  if(k==="dep") hover={kind:"dep",obj:S.pais.departamentos[i]};
+  else if(k==="mun") hover={kind:"mun",obj:S.dep._ms[i]};
+  else if(k==="pais") hover={kind:"pais",obj:RED.paises[i]};
+  else return;
+  draw();
+}
+let filt=new Set();
+function renderProducts(){
+  filt=new Set();
+  const f=$("#filt");
+  if(f) f.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{const key=c.dataset.t+"|"+c.dataset.x;filt.has(key)?filt.delete(key):filt.add(key);c.classList.toggle("on");listProducts();});
+  listProducts();
+}
+function listProducts(){
+  const v=S.prov,el=$("#plist");if(!el)return;
+  const fv=[...filt].filter(x=>x[0]==="v").map(x=>x.slice(2)),fp=[...filt].filter(x=>x[0]==="p").map(x=>x.slice(2));
+  const items=v.items.map((it,i)=>({...it,raw:v.productos[i].nombre})).filter(it=>(!fv.length||fv.some(x=>it.vars.includes(x)))&&(!fp.length||fp.some(x=>it.procs.includes(x))));
+  el.innerHTML=items.length?items.map(it=>`<div class="prod"><div class="t">${esc(it.title)}</div>${it.title!==it.raw?`<div class="full">${esc(it.raw)}</div>`:""}${it.vars.length||it.procs.length?`<div class="chips">${it.vars.map(x=>`<span class="chip">${esc(x)}</span>`).join("")}${it.procs.map(x=>`<span class="chip p">${esc(x)}</span>`).join("")}</div>`:""}</div>`).join(""):`<div class="empty">Ningún producto con ese filtro.</div>`;
+}
+function searchHTML(){return `<div class="search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="Busca proveedor, municipio, variedad…" autocomplete="off"></div>`;}
+function search(q){
+  const res=$("#results"),base=$("#base");q=norm(q);
+  if(q.length<2){res.innerHTML="";base.style.display="";return;}
+  base.style.display="none";
+  const hits=[];
+  IDX.proveedores.forEach((v,i)=>{
+    if(S.level===1&&v.mun.dep.pais!==S.pais)return;
+    const where=[v.mun.name,v.mun.dep.name].join(", ");
+    let why=null;
+    if(norm(v.nombre).includes(q)||norm(v.id)===q) why=plural(v.productos.length,"producto","productos");
+    else if(norm(where).includes(q)||norm(v.localidad).includes(q)) why=where;
+    else{const p=v.items.find((it,j)=>norm(v.productos[j].nombre).includes(q)||it.vars.some(x=>norm(x).includes(q))||it.procs.some(x=>norm(x).includes(q)));
+      if(p){const n=v.items.filter((it,j)=>norm(v.productos[j].nombre).includes(q)||it.vars.some(x=>norm(x).includes(q))||it.procs.some(x=>norm(x).includes(q))).length;why=`${plural(n,"producto coincide","productos coinciden")}`;}}
+    if(why) hits.push(rowHTML({k:"hit",i,t:v.nombre,s:`${where} · ${why}`,n:v.id,lead:`<span class="avatar">${esc(initials(v.nombre))}</span>`}));
+  });
+  res.innerHTML=hits.length?`<div class="sec">${plural(hits.length,"proveedor","proveedores")}</div>`+hits.join(""):`<div class="empty">Sin resultados para esa búsqueda.</div>`;
+  res.querySelectorAll(".row").forEach(b=>b.addEventListener("click",()=>rowClick("hit",+b.dataset.i)));
+}
+function avisosHTML(){
+  if(!RED.avisos||!RED.avisos.length) return "";
+  return `<details class="avisos"><summary>▸ ${plural(RED.avisos.length,"dato por revisar","datos por revisar")} en el Excel</summary><ul>${RED.avisos.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></details>`;
+}
+// hoja inferior en el celular: tocar el encabezado la agranda o reduce
+$("#ph").addEventListener("click",()=>{if(W>760)return;const p=$("#panel");
+  if(p.classList.contains("max")){p.classList.remove("max");p.classList.add("min");}
+  else if(p.classList.contains("min")){p.classList.remove("min");}
+  else p.classList.add("max");
+  setTimeout(()=>{resize();flyTo(target(),false);},260);
+});
+})();
+</script>
+</body>
+</html>
